@@ -1,0 +1,15 @@
+all: 
+  children:
+    k8s_servers:
+      hosts:
+       srv2:
+        ansible_host: 158.160.108.223
+       srv3:
+        ansible_host: 51.250.85.253
+       srv4:
+        ansible_host: 158.160.119.194
+       srv5:
+        ansible_host: 158.160.50.127
+      vars:
+       ansible_user: pavel
+       ansible_ssh_private_key_file: /Users/pavelpomorcev/.ssh/id_ed25519

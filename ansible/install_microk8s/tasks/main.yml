@@ -1,0 +1,109 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+
+- name: Install packages
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+
+- name: Create directory
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Check k8s GPG key exist
+  stat:
+    path: /etc/apt/keyrings/kubernetes-archive-keyring.gpg
+  register: k8s_key_file
+
+- name: Download k8s GPG key
+  shell: >
+        curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-archive-keyring.gpg
+  when: not k8s_key_file.stat.exists
+
+- name: Make source list k8s
+  shell: >
+        echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+  when: not k8s_key_file.stat.exists
+
+- name: Check docker GPG key exist
+  stat:
+    path: /etc/apt/keyrings/docker.gpg
+  register: docker_key_file
+
+- name: Download docker GPG key
+  shell: >
+        curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  when: not docker_key_file.stat.exists
+
+- name: Make source list docker
+  shell: >
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" |
+        sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  when: not docker_key_file.stat.exists
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+
+- name: Install packages docker
+  apt:
+    name: containerd.io
+    state: present
+
+- name: Copy config containerd
+  copy:
+    src: config.toml
+    dest: /etc/containerd/
+
+- name: Restart containerd service
+  service:
+    name: containerd
+    state: restarted
+
+- name: Install packages k8s
+  apt:
+    name:
+      - kubelet 
+      - kubeadm
+      - kubectl
+    state: present
+
+- name: Hold kubelet, kubeadm, and kubectl packages
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop:
+    - kubelet
+    - kubeadm
+    - kubectl
+
+- name: Load overlay and br_netfilter modules
+  shell: "modprobe {{ item }}"
+  loop:
+    - "overlay"
+    - "br_netfilter"
+
+- name: Apply sysctl settings
+  sysctl:
+    name: "{{ item }}"
+    value: 1
+  loop:
+    - "net.bridge.bridge-nf-call-iptables"
+    - "net.ipv4.ip_forward"
+
+- name: Run kubeadm join 
+  shell: >
+        kubeadm join 192.168.111.22:6443
+        --token 9uv2jq.vc370vqhtslv6x2j
+        --discovery-token-ca-cert-hash sha256:749874385805eac6c787ff8340540f5b539f286e28563bca0c938976cf8c256b
+  args:
+    executable: /bin/bash
+
